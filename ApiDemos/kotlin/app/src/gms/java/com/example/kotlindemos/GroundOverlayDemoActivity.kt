@@ -14,6 +14,8 @@
 package com.example.kotlindemos
 
 import android.Manifest
+import android.annotation.SuppressLint
+import android.content.Context
 import android.content.pm.PackageManager
 import android.location.Location
 import android.location.LocationListener
@@ -35,6 +37,13 @@ import com.google.android.gms.maps.model.LatLng
 import com.google.android.gms.maps.CameraUpdateFactory
 
 import android.location.LocationManager
+import androidx.core.app.ActivityCompat
+import com.google.android.gms.maps.GoogleMap
+
+import com.google.android.gms.maps.GoogleMapOptions
+
+
+
 
 
 /**
@@ -58,18 +67,31 @@ class GroundOverlayDemoActivity : AppCompatActivity(), OnSeekBarChangeListener,
         transparencyBar = findViewById(R.id.transparencySeekBar)
         transparencyBar.max = TRANSPARENCY_MAX
         transparencyBar.progress = 0
-        val mapFragment =
+        var mapFragment =
             supportFragmentManager.findFragmentById(R.id.map) as SupportMapFragment?
+        val options = GoogleMapOptions()
+        options.mapType(GoogleMap.MAP_TYPE_SATELLITE)
+            .compassEnabled(true)
+            .rotateGesturesEnabled(false)
+            .tiltGesturesEnabled(false)
+
+//        mapFragment = SupportMapFragment.newInstance(options)
+        //        val mapFragment =
+//            supportFragmentManager.findFragmentById(R.id.map) as SupportMapFragment?
+
         mapFragment?.getMapAsync(this)
     }
 
     override fun onMapReady(map: GoogleMap?) {
         map ?: return
+//        map.uiSettings.isRotateGesturesEnabled = false
+//        map.uiSettings.isTiltGesturesEnabled = false
         mMap = map
 
         mMap.setOnMyLocationButtonClickListener(this)
         mMap.setOnMyLocationClickListener(this)
-        enableMyLocation()
+//        enableMyLocation()
+        enableCoarseLocation()
 
         // Register a listener to respond to clicks on GroundOverlays.
         mMap.setOnGroundOverlayClickListener(this)
@@ -202,6 +224,162 @@ class GroundOverlayDemoActivity : AppCompatActivity(), OnSeekBarChangeListener,
         // [END maps_check_location_permission]
     }
 
+    private fun enableCoarseLocation(){
+        if(ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
+            && ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED){
+            Log.e("TAG", "enableCoarseLocation: -> PERMISSION_GRANTED" )
+            mMap.isMyLocationEnabled = true
+            mMap.uiSettings.isCompassEnabled = true
+            getCurrentMyLocation()
+        }else{
+            Log.e("TAG", "enableCoarseLocation: -> PERMISSION_DENIED" )
+            ActivityCompat.requestPermissions(
+                this,
+                arrayOf(
+                    android.Manifest.permission.ACCESS_FINE_LOCATION,
+                    android.Manifest.permission.ACCESS_COARSE_LOCATION
+                ),
+                COARSE_AND_FIND_LOCATION_PERMISSION_REQUEST_CODE
+            )
+        }
+    }
+    private fun isLocationPermissionGranted(): Boolean {
+        return if (ActivityCompat.checkSelfPermission(
+                this,
+                android.Manifest.permission.ACCESS_COARSE_LOCATION
+            ) != PackageManager.PERMISSION_GRANTED && ActivityCompat.checkSelfPermission(
+                this,
+                android.Manifest.permission.ACCESS_FINE_LOCATION
+            ) != PackageManager.PERMISSION_GRANTED
+        ) {
+            ActivityCompat.requestPermissions(
+                this,
+                arrayOf(
+                    android.Manifest.permission.ACCESS_FINE_LOCATION,
+                    android.Manifest.permission.ACCESS_COARSE_LOCATION
+                ),
+                COARSE_AND_FIND_LOCATION_PERMISSION_REQUEST_CODE
+            )
+            false
+        } else {
+            true
+        }
+    }
+
+    private var currentLocation: Location? = null
+    lateinit var locationManager: LocationManager
+    lateinit var locationManager2: LocationManager
+//    val hasGps = locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER)
+    private var hasGps = false
+//    val hasNetwork = locationManager.isProviderEnabled(LocationManager.NETWORK_PROVIDER)
+    private var hasNetwork = false
+//    lateinit var locationByGps:Location
+//    lateinit var locationByNetwork:Location
+    var locationByGps:Location? = null
+    var locationByNetwork:Location? = null
+    val gpsLocationListener: LocationListener = object : LocationListener {
+        override fun onLocationChanged(location: Location) {
+            Toast.makeText(applicationContext, "gpsLocationListener accuracy -> "+location.accuracy, Toast.LENGTH_SHORT).show()
+            locationByGps= location
+            animateCamera(locationByGps!!.latitude, locationByGps!!.longitude)
+        }
+
+        override fun onStatusChanged(provider: String, status: Int, extras: Bundle) {}
+        override fun onProviderEnabled(provider: String) {}
+        override fun onProviderDisabled(provider: String) {}
+    }
+    //------------------------------------------------------//
+    val networkLocationListener: LocationListener = object : LocationListener {
+        override fun onLocationChanged(location: Location) {
+            Toast.makeText(applicationContext, "networkLocationListener accuracy -> "+location.accuracy, Toast.LENGTH_SHORT).show()
+            locationByNetwork= location
+            animateCamera(locationByNetwork!!.latitude, locationByNetwork!!.longitude)
+        }
+
+        override fun onStatusChanged(provider: String, status: Int, extras: Bundle) {}
+        override fun onProviderEnabled(provider: String) {}
+        override fun onProviderDisabled(provider: String) {}
+    }
+
+    /*@SuppressLint("MissingPermission")
+    val lastKnownLocationByGps: Location? = locationManager.getLastKnownLocation(LocationManager.GPS_PROVIDER)
+    @SuppressLint("MissingPermission")
+    val lastKnownLocationByNetwork: Location? = locationManager.getLastKnownLocation(LocationManager.NETWORK_PROVIDER)*/
+    @SuppressLint("MissingPermission")
+    lateinit var lastKnownLocationByGps: Location
+    @SuppressLint("MissingPermission")
+    lateinit var lastKnownLocationByNetwork: Location
+
+    var latitude:Double = 0.0
+    var longitude:Double = 0.0
+
+    @SuppressLint("MissingPermission")
+    private fun getCurrentMyLocation(){
+        locationManager = getSystemService(Context.LOCATION_SERVICE) as LocationManager
+        locationManager2 = getSystemService(Context.LOCATION_SERVICE) as LocationManager
+        hasGps = locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER)
+        hasNetwork = locationManager.isProviderEnabled(LocationManager.NETWORK_PROVIDER)
+        if(locationManager.getLastKnownLocation(LocationManager.GPS_PROVIDER)!=null) lastKnownLocationByGps = locationManager.getLastKnownLocation(LocationManager.GPS_PROVIDER)
+        if(locationManager2.getLastKnownLocation(LocationManager.NETWORK_PROVIDER)!=null) lastKnownLocationByNetwork = locationManager2.getLastKnownLocation(LocationManager.NETWORK_PROVIDER)
+//        lastKnownLocationByGps = locationManager.getLastKnownLocation(LocationManager.GPS_PROVIDER)
+//        lastKnownLocationByNetwork = locationManager.getLastKnownLocation(LocationManager.NETWORK_PROVIDER)
+        if(locationManager.getLastKnownLocation(LocationManager.GPS_PROVIDER)!=null){
+            if (hasGps) {
+                locationManager.requestLocationUpdates(
+                    LocationManager.GPS_PROVIDER,
+                    5000,
+                    0F,
+                    gpsLocationListener
+                )
+                lastKnownLocationByGps?.let {
+                    locationByGps = lastKnownLocationByGps
+                }
+            }
+        }
+        //------------------------------------------------------//
+        if(locationManager2.getLastKnownLocation(LocationManager.NETWORK_PROVIDER)!=null){
+//        if(false){
+            if (hasNetwork) {
+                locationManager2.requestLocationUpdates(
+                    LocationManager.NETWORK_PROVIDER,
+                    5000,
+                    0F,
+                    networkLocationListener
+                )
+                lastKnownLocationByNetwork?.let {
+                    locationByNetwork = lastKnownLocationByNetwork
+                }
+            }
+        }
+        if (locationByGps != null && locationByNetwork != null) {
+            if (locationByGps!!.accuracy > locationByNetwork!!.accuracy) {
+                currentLocation = locationByGps
+                latitude = currentLocation!!.latitude
+                longitude = currentLocation!!.longitude
+                // use latitude and longitude as per your need
+                animateCamera(latitude, longitude)
+            } else {
+                currentLocation = locationByNetwork
+                latitude = currentLocation!!.latitude
+                longitude = currentLocation!!.longitude
+                // use latitude and longitude as per your need
+                animateCamera(latitude, longitude)
+            }
+        }
+    }
+
+    private fun animateCamera(latitude: Double, longitude: Double) {
+        mMap.animateCamera(
+            CameraUpdateFactory.newLatLngZoom(
+                LatLng(
+                    latitude,
+                    longitude
+                ), 20.0f
+            )
+        )
+    }
+
+
     override fun onMyLocationButtonClick(): Boolean {
         Toast.makeText(this, "MyLocation button clicked", Toast.LENGTH_SHORT).show()
         // Return false so that we don't consume the event and the default behavior still occurs
@@ -228,6 +406,7 @@ class GroundOverlayDemoActivity : AppCompatActivity(), OnSeekBarChangeListener,
          * @see .onRequestPermissionsResult
          */
         private const val LOCATION_PERMISSION_REQUEST_CODE = 1
+        private const val COARSE_AND_FIND_LOCATION_PERMISSION_REQUEST_CODE = 1
     }
 
 //    override fun onLocationChanged(p0: Location?) {
